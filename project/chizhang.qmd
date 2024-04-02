@@ -1,0 +1,168 @@
+---
+title: "The Growth Code" 
+subtitle: "Uncovering the Secret Link Between Child Nutrition and Economic Development"
+author: "Chi Zhang"
+date: "2024-04-01"
+format: 
+  html:
+    toc: true
+    theme: quartz
+    backgroundcolor: lightgrey
+execute: 
+  echo: false
+  warning: false
+  message: false
+editor: visual
+---
+
+With the rapid global economic growth and population increase, the impact of early childhood nutrition on a country's overall development is receiving increasing attention. Consumption of dairy products is a crucial aspect of children's nutrition, but the proportion of dairy consumption varies significantly among different countries. By analyzing the relationship between children's dairy consumption, population growth, economic development, and health status, we can gain a deep understanding of the close connection between children's nutrition and national development. This understanding can guide policymakers and stakeholders to prioritize investments in children's nutrition, leading to the formulation of policies that support children's healthy growth and contribute to the long-term economic and social progress of the country.
+
+## **Children's Nutritional Status Across Countries**
+
+```{r, fig.width=8}
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+library(scales)
+library(ggrepel)
+
+df <- read_csv("unicef_indicator_1.csv", show_col_types = FALSE)
+df_tot <- df %>% 
+  filter(sex == "Total") %>%
+  group_by(country) %>%
+  summarise(avg_dairy = mean(obs_value))
+
+map_world <- map_data("world")
+map_data_join <- full_join(df_tot, map_world, by = c("country" = "region"))
+
+ggplot(map_data_join) + 
+  aes(x = long, y = lat, group = group, fill = avg_dairy) +
+  scale_fill_gradient2(labels = percent_format(scale = 1)) + 
+  geom_polygon() + 
+  theme_bw() +
+  labs(title = "Comparing Children's Nutritional Status Across Countries (2005 to 2020)", subtitle = "Countries in grey have no data due to a mismatch with their names", y = "Latitude", x = "Longitude", fill = "Average Dairy Consumption Ratio") +
+  theme(legend.position = "bottom", text = element_text(family = "Times New Roman"))
+  #theme(legend.title = element_text(hjust = 0.5)) 
+```
+
+This map displays a comparison of the nutritional status of children in different countries based on the **"Food group - Dairy (milk, infant formula, yogurt, cheese) (6-23 months)"** as an assessment indicator. The shades of purple and white are used to reflect the proportion of dairy consumption. This map can help analyze the proportion of dairy consumption among children in different countries during specific time periods and further understand the differences in early childhood nutrition across countries.
+
+## **Gender Differences in Dairy Consumption Proportions**
+
+```{r, fig.width=8}
+df_male_female <- df %>% 
+  filter(sex != "Total") %>% 
+  group_by(country, sex) %>% 
+  summarise(avg_dairy = mean(obs_value)) %>%
+  ungroup() %>%
+  group_by(country) %>%
+  mutate(tot_dairy = sum(avg_dairy)) %>% 
+  arrange(desc(tot_dairy)) %>%
+  mutate(text_position = cumsum(avg_dairy) - 0.5 * avg_dairy,
+         adjust = ifelse(sex == "Male", -0.25, 0.25),
+         text_position = text_position + adjust,
+         country = ifelse(country == "Macedonia, the former Yugoslav Republic of", "Macedonia", country),
+         avg_dairy_label = percent(avg_dairy/100, accuracy = 0.1))
+
+df_male_female <- df_male_female[1:30, ] 
+
+ggplot(df_male_female, aes(x = reorder(country, avg_dairy), y = avg_dairy, fill = sex)) + 
+  geom_bar(stat = "identity", position = "stack") + 
+  geom_text(aes(label = avg_dairy_label, y = text_position), hjust = 0.5, color = "white", size = 3.5) +
+  scale_fill_brewer(palette = "Set2") + 
+  coord_flip() + 
+  #facet_wrap(~time_period) + 
+  theme_bw() +
+  labs(title = "Gender Differences in Dairy Consumption Proportions among Top 15 Countries", y = "Dairy Consumption Proportion", x = "Country", fill = "Average Dairy Consumption Ratio") + 
+  theme(legend.position = "bottom", plot.title = element_text(size = 13), text = element_text(family = "Times New Roman")) +
+  guides(fill = guide_legend(reverse = TRUE))
+```
+
+This bar chart compares the gender differences in dairy consumption proportions **among the top 15 countries**. Each country's bar is divided into blue and orange parts representing male and female dairy consumption proportions. The distance between bars of the same color indicates the difference in consumption between genders. **Overall, males consume slightly more dairy than females, but the difference is not significant.**
+
+## **Relationship between Economic Indicators, Life Expectancy, and Nutritional Intake**
+
+```{r, fig.width=8, fig.height=8}
+df2 <- read_csv("unicef_indicator_1.csv", show_col_types = FALSE)
+df3 <- read_csv("unicef_metadata.csv", show_col_types = FALSE)
+df3$year <- as.character(df3$year)
+
+data_join <- df %>%
+  full_join(df2, by = intersect(names(df), names(df2))) %>%
+  full_join(df3, by = c("country", "time_period" = "year")) %>%
+  filter(sex == "Total") %>%
+  group_by(country) %>%
+  summarise(avg_dairy = mean(obs_value),
+            avg_gdp = mean(`GDP per capita (constant 2015 US$)`),
+            avg_life_exp = mean(`Life expectancy at birth, total (years)`))
+
+countries_to_label <- c("Cuba", "Uruguay", "Burundi", "Swaziland", "Sudan")
+
+g1 <- ggplot(data_join, aes(x = avg_dairy, y = avg_gdp)) + 
+  geom_point(aes(color = country), size = 4, alpha = 0.5) + 
+  geom_smooth(method = "lm", se = FALSE, linetype = "dashed") +
+  geom_text_repel(aes(label = ifelse(country %in% countries_to_label, country, NA), color = country), size = 3, 
+                  max.overlaps = Inf,
+                  point.padding = 0.5, 
+                  box.padding = 0.5,
+                  segment.color = NA) + 
+  labs(title = "The Analysis of the Relationship between\nEconomic Indicators, Life Expectancy, and Nutritional Intake", x = "AVG Dairy Consumption Ratio", y = "AVG GDP per capita") + 
+  scale_x_continuous(labels = percent_format(scale = 1, accuracy = 1)) +  
+  scale_y_continuous(labels = dollar_format(prefix = "$", accuracy = 1)) +
+  theme_bw() + 
+  theme(legend.position = "none", plot.title = element_text(size = 13), text = element_text(family = "Times New Roman"))
+
+g2 <- ggplot(data_join, aes(x = avg_dairy, y = avg_life_exp)) + 
+  geom_point(aes(color = country), size = 4, alpha = 0.5) + 
+  geom_smooth(method = "lm", se = FALSE, linetype = "dashed") +
+  geom_text_repel(aes(label = ifelse(country %in% countries_to_label, country, NA), color = country), size = 3,
+                  max.overlaps = Inf,
+                  point.padding = 0.5, 
+                  box.padding = 0.5,
+                  segment.color = NA) +
+  labs("The Analysis of the Relationship between\nEconomic Indicators, Life Expectancy, and Nutritional Intake", x = "AVG Dairy Consumption Ratio", y = "AVG Life Expectancy at Birth (years)") + 
+  scale_x_continuous(labels = percent_format(scale = 1, accuracy = 1))  +
+  theme_bw() + 
+  theme(legend.position = "none", text = element_text(family = "Times New Roman")) 
+
+ggpubr::ggarrange(g1, g2, ncol = 1, align = "hv")
+
+# ggplotly(g1)
+# 
+# ggplotly(g2)
+```
+
+This scatter plot illustrates the relationship between **per capita GDP,** life expectancy, and the proportion of children's dairy product consumption. Each country is represented by a scatter point, and the added trend line reveals that as the proportion of children's dairy product consumption increases, both per capita GDP and life expectancy also increase correspondingly.
+
+## **Temporal Analysis of Dairy Consumption and Per Capita GDP Trends**
+
+```{r, fig.width=8}
+df_trend <- data_join <- df %>%
+  full_join(df2, by = intersect(names(df), names(df2))) %>%
+  full_join(df3, by = c("country", "time_period" = "year")) %>%
+  filter(sex == "Total") %>%
+  group_by(time_period) %>% 
+  summarise(tot_dairy = sum(obs_value, na.rm = TRUE), tot_gpd = sum(`GDP per capita (constant 2015 US$)`, na.rm = TRUE)) %>%
+  filter(tot_gpd > 0, time_period != "2020") %>%
+  mutate(time_period = as.numeric(time_period))
+
+scaling_factor <- max(df_trend$tot_dairy) / max(df_trend$tot_gpd, na.rm = TRUE)
+
+ggplot(df_trend) +
+  geom_area(aes(x = time_period, y = tot_dairy), fill = "grey", alpha = 0.5) +
+  geom_line(aes(x = time_period, y = tot_gpd * scaling_factor, label = tot_gpd), linewidth = 1.5, color = "tomato") +
+  geom_point(aes(x = time_period, y = tot_gpd * scaling_factor, label = tot_gpd), size = 3, color = "tomato") +
+  geom_text_repel(aes(x = time_period, y = tot_gpd * scaling_factor, label = sprintf("$%.0fk", tot_gpd / 1000)),box.padding = 0.5, point.padding = 0.6, segment.color = NA, color = "tomato") +
+  scale_y_continuous(
+    name = "Dairy Consumption Ratio",
+    labels = percent_format(scale = 0.01, accuracy = 1),
+    sec.axis = sec_axis(~./scaling_factor, name = "GPD per capita (constant 2015 US$)")
+  ) + 
+  labs(title = "Temporal Analysis of Dairy Consumption and Per Capita GDP Trends", x = "Year") + 
+  theme_bw() +
+  theme(text = element_text(family = "Times New Roman")) + 
+  labs(x = "Year")
+
+```
+
+This visualization combines an area chart (proportion of dairy product consumption) and a line chart (per capita GDP). Overall, it shows that over time, both the proportion of dairy product consumption and per capita GDP have been increasing. When the proportion of dairy product consumption reaches its peak, the corresponding year also sees the peak in per capita GDP(In **2014**, the dairy consumption ratio reached its **peak at 15.33**, while per capita GDP also reached its **peak at \$71k**). Therefore, it can be concluded that the level of dairy product consumption has an impact on per capita GDP.
